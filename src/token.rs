@@ -49,6 +49,7 @@ impl Token {
         }
     }
 
+    #[allow(clippy::field_reassign_with_default)]
     async fn get_token(scope: &str) -> Result<(String, u64), Error> {
         let now = now();
         let exp = now + 3600;

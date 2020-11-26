@@ -1141,6 +1141,7 @@ mod tests {
 
         let mut result = Object::download_streamed(&bucket.name, "test-download").await?;
         let mut data = Vec::new();
+        #[allow(clippy::for_loops_over_fallibles)]
         for part in result.next().await {
             data.push(part?);
         }
