@@ -101,9 +101,9 @@ impl HmacKey {
         let url = format!(
             "{}/projects/{}/hmacKeys",
             crate::BASE_URL,
-            crate::SERVICE_ACCOUNT.project_id
+            client.service_account.project_id
         );
-        let query = [("serviceAccountEmail", &crate::SERVICE_ACCOUNT.client_email)];
+        let query = [("serviceAccountEmail", &client.service_account.client_email)];
         let mut headers = crate::get_headers(client).await?;
         headers.insert(CONTENT_LENGTH, 0.into());
         let result: GoogleResponse<Self> = client
@@ -154,7 +154,7 @@ impl HmacKey {
         let url = format!(
             "{}/projects/{}/hmacKeys",
             crate::BASE_URL,
-            crate::SERVICE_ACCOUNT.project_id
+            client.service_account.project_id
         );
         let response = client
             .http_client
@@ -210,7 +210,7 @@ impl HmacKey {
         let url = format!(
             "{}/projects/{}/hmacKeys/{}",
             crate::BASE_URL,
-            crate::SERVICE_ACCOUNT.project_id,
+            client.service_account.project_id,
             access_id
         );
         let result: GoogleResponse<HmacMeta> = client
@@ -263,7 +263,7 @@ impl HmacKey {
         let url = format!(
             "{}/projects/{}/hmacKeys/{}",
             crate::BASE_URL,
-            crate::SERVICE_ACCOUNT.project_id,
+            client.service_account.project_id,
             access_id
         );
         serde_json::to_string(&UpdateMeta { state })?;
@@ -313,7 +313,7 @@ impl HmacKey {
         let url = format!(
             "{}/projects/{}/hmacKeys/{}",
             crate::BASE_URL,
-            crate::SERVICE_ACCOUNT.project_id,
+            client.service_account.project_id,
             access_id
         );
         let response = client

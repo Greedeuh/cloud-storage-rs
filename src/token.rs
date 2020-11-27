@@ -55,7 +55,7 @@ impl Token {
         let exp = now + 3600;
 
         let claims = Claims {
-            iss: crate::SERVICE_ACCOUNT.client_email.clone(),
+            iss: client.service_account.client_email.clone(),
             scope: scope.into(),
             aud: "https://www.googleapis.com/oauth2/v4/token".to_string(),
             exp,
@@ -63,7 +63,7 @@ impl Token {
         };
         let mut header = jsonwebtoken::Header::default();
         header.alg = jsonwebtoken::Algorithm::RS256;
-        let private_key_bytes = crate::SERVICE_ACCOUNT.private_key.as_bytes();
+        let private_key_bytes = client.service_account.private_key.as_bytes();
         let private_key = jsonwebtoken::EncodingKey::from_rsa_pem(private_key_bytes)?;
         let jwt = jsonwebtoken::encode(&header, &claims, &private_key)?;
         let body = [

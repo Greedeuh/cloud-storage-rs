@@ -1,7 +1,10 @@
-use crate::error::{Error, GoogleResponse};
 pub use crate::resources::bucket::Owner;
 use crate::resources::common::ListResponse;
 use crate::resources::object_access_control::ObjectAccessControl;
+use crate::{
+    error::{Error, GoogleResponse},
+    Client,
+};
 use futures::{stream, Stream, TryStream};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
@@ -862,8 +865,15 @@ impl Object {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn download_url(&self, duration: u32) -> crate::Result<String> {
-        self.sign(&self.name, duration, "GET", None)
+    pub fn download_url(&self, duration: u32, client: &Client) -> crate::Result<String> {
+        self.sign(
+            &self.name,
+            duration,
+            "GET",
+            None,
+            &client.service_account.client_email,
+            &client.service_account.private_key,
+        )
     }
 
     /// Creates a [Signed Url](https://cloud.google.com/storage/docs/access-control/signed-urls)
@@ -886,8 +896,16 @@ impl Object {
         &self,
         duration: u32,
         opts: crate::DownloadOptions,
+        client: &Client,
     ) -> crate::Result<String> {
-        self.sign(&self.name, duration, "GET", opts.content_disposition)
+        self.sign(
+            &self.name,
+            duration,
+            "GET",
+            opts.content_disposition,
+            &client.service_account.client_email,
+            &client.service_account.private_key,
+        )
     }
 
     // /// Creates a [Signed Url](https://cloud.google.com/storage/docs/access-control/signed-urls)
@@ -904,6 +922,8 @@ impl Object {
         duration: u32,
         http_verb: &str,
         content_disposition: Option<String>,
+        client_email: &str,
+        private_key: &str,
     ) -> crate::Result<String> {
         use openssl::sha;
 
@@ -938,6 +958,7 @@ impl Object {
             duration,
             &signed_headers,
             content_disposition,
+            client_email,
         );
         let canonical_request =
             self.get_canonical_request(&file_path, &query_string, http_verb, &canonical_headers);
@@ -959,7 +980,7 @@ impl Object {
         );
 
         // 4 sign the string to sign with RSA - SHA256
-        let buffer = Self::sign_str(&string_to_sign)?;
+        let buffer = Self::sign_str(&string_to_sign, private_key)?;
         let signature = hex::encode(&buffer);
 
         // 5 construct the signed url
@@ -1005,10 +1026,11 @@ impl Object {
         exp: u32,
         headers: &str,
         content_disposition: Option<String>,
+        client_email: &str,
     ) -> String {
         let credential = format!(
             "{authorizer}/{scope}",
-            authorizer = crate::SERVICE_ACCOUNT.client_email,
+            authorizer = client_email,
             scope = Self::get_credential_scope(date),
         );
         let mut s = format!(
@@ -1045,10 +1067,10 @@ impl Object {
     }
 
     #[inline(always)]
-    fn sign_str(message: &str) -> Result<Vec<u8>, Error> {
+    fn sign_str(message: &str, private_key: &str) -> Result<Vec<u8>, Error> {
         use openssl::{hash::MessageDigest, pkey::PKey, sign::Signer};
 
-        let key = PKey::private_key_from_pem(crate::SERVICE_ACCOUNT.private_key.as_bytes())?;
+        let key = PKey::private_key_from_pem(private_key.as_bytes())?;
         let mut signer = Signer::new(MessageDigest::sha256(), &key)?;
         signer.update(message.as_bytes())?;
         Ok(signer.sign_to_vec()?)
@@ -1344,7 +1366,7 @@ mod tests {
             &client,
         )
         .await?;
-        let url = obj3.download_url(100)?;
+        let url = obj3.download_url(100, &client)?;
         let content = reqwest::get(&url).await?.text().await?;
         assert_eq!(content.as_bytes(), &[0, 1, 2, 3]);
         Ok(())
@@ -1375,7 +1397,7 @@ mod tests {
         )
         .await?;
         let obj = obj.rewrite(&bucket.name, "test-rewritten", &client).await?;
-        let url = obj.download_url(100)?;
+        let url = obj.download_url(100, &client)?;
         let download = client.http_client.head(&url).send().await?;
         assert_eq!(download.status().as_u16(), 200);
         Ok(())
@@ -1397,7 +1419,7 @@ mod tests {
             let _obj =
                 Object::create(&bucket.name, vec![0, 1], name, "text/plain", &client).await?;
             let obj = Object::read(&bucket.name, &name, &client).await.unwrap();
-            let url = obj.download_url(100)?;
+            let url = obj.download_url(100, &client)?;
             let download = client.http_client.head(&url).send().await?;
             assert_eq!(download.status().as_u16(), 200);
         }
@@ -1418,7 +1440,7 @@ mod tests {
         .await?;
 
         let opts1 = crate::DownloadOptions::new().content_disposition("attachment");
-        let download_url1 = obj.download_url_with(100, opts1)?;
+        let download_url1 = obj.download_url_with(100, opts1, &client)?;
         let download1 = client.http_client.head(&download_url1).send().await?;
         assert_eq!(download1.headers()["content-disposition"], "attachment");
         Ok(())

@@ -91,33 +91,13 @@ mod resources;
 mod token;
 
 pub use crate::error::*;
-use crate::resources::service_account::ServiceAccount;
 pub use crate::resources::{
     bucket::{Bucket, NewBucket},
     object::Object,
     *,
 };
-use crate::token::Token;
 pub use client::Client;
 pub use download_options::DownloadOptions;
-use tokio::sync::Mutex;
-
-lazy_static::lazy_static! {
-    /// Static `Token` struct that caches
-    static ref TOKEN_CACHE: Mutex<Token> = Mutex::new(Token::new(
-        "https://www.googleapis.com/auth/devstorage.full_control",
-    ));
-
-    static ref IAM_TOKEN_CACHE: Mutex<Token> = Mutex::new(Token::new(
-        "https://www.googleapis.com/auth/iam"
-    ));
-
-    /// The struct is the parsed service account json file. It is publicly exported to enable easier
-    /// debugging of which service account is currently used. It is of the type
-    /// [ServiceAccount](service_account/struct.ServiceAccount.html).
-    pub static ref SERVICE_ACCOUNT: ServiceAccount = ServiceAccount::get();
-
-}
 
 /// A type alias where the error is set to be `cloud_storage::Error`.
 pub type Result<T> = std::result::Result<T, crate::Error>;
@@ -126,7 +106,7 @@ const BASE_URL: &str = "https://www.googleapis.com/storage/v1";
 
 async fn get_headers(client: &Client) -> Result<reqwest::header::HeaderMap> {
     let mut result = reqwest::header::HeaderMap::new();
-    let mut guard = TOKEN_CACHE.lock().await;
+    let mut guard = client.token_cache.lock().await;
     let token = guard.get(client).await?;
     result.insert(
         reqwest::header::AUTHORIZATION,
