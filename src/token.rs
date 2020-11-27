@@ -34,15 +34,15 @@ impl Token {
         }
     }
 
-    pub async fn get(&mut self) -> crate::Result<String> {
+    pub async fn get(&mut self, client: &crate::Client) -> crate::Result<String> {
         match self.token {
             Some((ref token, exp)) if exp > now() => Ok(token.clone()),
-            _ => self.retrieve().await,
+            _ => self.retrieve(client).await,
         }
     }
 
-    async fn retrieve(&mut self) -> crate::Result<String> {
-        self.token = Some(Self::get_token(&self.access_scope).await?);
+    async fn retrieve(&mut self, client: &crate::Client) -> crate::Result<String> {
+        self.token = Some(Self::get_token(&self.access_scope, client).await?);
         match self.token {
             Some(ref token) => Ok(token.0.clone()),
             None => unreachable!(),
@@ -50,7 +50,7 @@ impl Token {
     }
 
     #[allow(clippy::field_reassign_with_default)]
-    async fn get_token(scope: &str) -> Result<(String, u64), Error> {
+    async fn get_token(scope: &str, client: &crate::Client) -> Result<(String, u64), Error> {
         let now = now();
         let exp = now + 3600;
 
@@ -70,7 +70,8 @@ impl Token {
             ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
             ("assertion", &jwt),
         ];
-        let response: TokenResponse = super::CLIENT
+        let response: TokenResponse = client
+            .http_client
             .post("https://www.googleapis.com/oauth2/v4/token")
             .form(&body)
             .send()

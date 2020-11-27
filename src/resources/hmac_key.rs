@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-use crate::error::GoogleResponse;
+use crate::{error::GoogleResponse, Client};
 
 /// The `HmacKey` resource represents an HMAC key within Cloud Storage. The resource consists of a
 /// secret and `HmacMeta`. HMAC keys can be used as credentials for service accounts. For more
@@ -95,7 +95,7 @@ impl HmacKey {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn create() -> crate::Result<Self> {
+    pub async fn create(client: &Client) -> crate::Result<Self> {
         use reqwest::header::CONTENT_LENGTH;
 
         let url = format!(
@@ -104,9 +104,10 @@ impl HmacKey {
             crate::SERVICE_ACCOUNT.project_id
         );
         let query = [("serviceAccountEmail", &crate::SERVICE_ACCOUNT.client_email)];
-        let mut headers = crate::get_headers().await?;
+        let mut headers = crate::get_headers(client).await?;
         headers.insert(CONTENT_LENGTH, 0.into());
-        let result: GoogleResponse<Self> = crate::CLIENT
+        let result: GoogleResponse<Self> = client
+            .http_client
             .post(&url)
             .headers(headers)
             .query(&query)
@@ -149,15 +150,16 @@ impl HmacKey {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn list() -> crate::Result<Vec<HmacMeta>> {
+    pub async fn list(client: &Client) -> crate::Result<Vec<HmacMeta>> {
         let url = format!(
             "{}/projects/{}/hmacKeys",
             crate::BASE_URL,
             crate::SERVICE_ACCOUNT.project_id
         );
-        let response = crate::CLIENT
+        let response = client
+            .http_client
             .get(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .send()
             .await?
             .text()
@@ -204,16 +206,17 @@ impl HmacKey {
     /// let key = HmacKey::read("some identifier").await?;
     /// # Ok(())
     /// # }
-    pub async fn read(access_id: &str) -> crate::Result<HmacMeta> {
+    pub async fn read(access_id: &str, client: &Client) -> crate::Result<HmacMeta> {
         let url = format!(
             "{}/projects/{}/hmacKeys/{}",
             crate::BASE_URL,
             crate::SERVICE_ACCOUNT.project_id,
             access_id
         );
-        let result: GoogleResponse<HmacMeta> = crate::CLIENT
+        let result: GoogleResponse<HmacMeta> = client
+            .http_client
             .get(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .send()
             .await?
             .json()
@@ -252,7 +255,11 @@ impl HmacKey {
     /// let key = HmacKey::update("your key", HmacState::Active).await?;
     /// # Ok(())
     /// # }
-    pub async fn update(access_id: &str, state: HmacState) -> crate::Result<HmacMeta> {
+    pub async fn update(
+        access_id: &str,
+        state: HmacState,
+        client: &Client,
+    ) -> crate::Result<HmacMeta> {
         let url = format!(
             "{}/projects/{}/hmacKeys/{}",
             crate::BASE_URL,
@@ -260,9 +267,10 @@ impl HmacKey {
             access_id
         );
         serde_json::to_string(&UpdateMeta { state })?;
-        let result: GoogleResponse<HmacMeta> = crate::CLIENT
+        let result: GoogleResponse<HmacMeta> = client
+            .http_client
             .put(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .json(&UpdateMeta { state })
             .send()
             .await?
@@ -301,16 +309,17 @@ impl HmacKey {
     /// HmacKey::delete(&key.access_id).await?;
     /// # Ok(())
     /// # }
-    pub async fn delete(access_id: &str) -> crate::Result<()> {
+    pub async fn delete(access_id: &str, client: &Client) -> crate::Result<()> {
         let url = format!(
             "{}/projects/{}/hmacKeys/{}",
             crate::BASE_URL,
             crate::SERVICE_ACCOUNT.project_id,
             access_id
         );
-        let response = crate::CLIENT
+        let response = client
+            .http_client
             .delete(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .send()
             .await?;
         if response.status().is_success() {
@@ -332,65 +341,76 @@ impl HmacKey {
 mod tests {
     use super::*;
 
-    async fn get_test_hmac() -> HmacMeta {
-        match HmacKey::create().await {
+    async fn get_test_hmac(client: &Client) -> HmacMeta {
+        match HmacKey::create(client).await {
             Ok(key) => key.metadata,
-            Err(_) => HmacKey::list().await.unwrap().pop().unwrap(),
+            Err(_) => HmacKey::list(client).await.unwrap().pop().unwrap(),
         }
     }
 
-    async fn remove_test_hmac(access_id: &str) {
-        HmacKey::update(access_id, HmacState::Inactive)
+    async fn remove_test_hmac(access_id: &str, client: &Client) {
+        HmacKey::update(access_id, HmacState::Inactive, client)
             .await
             .unwrap();
-        HmacKey::delete(access_id).await.unwrap();
+        HmacKey::delete(access_id, client).await.unwrap();
     }
 
     #[tokio::test]
     async fn create() -> Result<(), Box<dyn std::error::Error>> {
-        let key = HmacKey::create().await?;
-        remove_test_hmac(&key.metadata.access_id).await;
+        let client = Client::default();
+        let key = HmacKey::create(&client).await?;
+        remove_test_hmac(&key.metadata.access_id, &client).await;
         Ok(())
     }
 
     #[tokio::test]
     async fn list() -> Result<(), Box<dyn std::error::Error>> {
-        HmacKey::list().await?;
+        let client = Client::default();
+
+        HmacKey::list(&client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn read() -> Result<(), Box<dyn std::error::Error>> {
-        let key = get_test_hmac().await;
-        HmacKey::read(&key.access_id).await?;
-        remove_test_hmac(&key.access_id).await;
+        let client = Client::default();
+
+        let key = get_test_hmac(&client).await;
+        HmacKey::read(&key.access_id, &client).await?;
+        remove_test_hmac(&key.access_id, &client).await;
         Ok(())
     }
 
     #[tokio::test]
     async fn update() -> Result<(), Box<dyn std::error::Error>> {
-        let key = get_test_hmac().await;
-        HmacKey::update(&key.access_id, HmacState::Inactive).await?;
-        HmacKey::delete(&key.access_id).await?;
+        let client = Client::default();
+
+        let key = get_test_hmac(&client).await;
+        HmacKey::update(&key.access_id, HmacState::Inactive, &client).await?;
+        HmacKey::delete(&key.access_id, &client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn delete() -> Result<(), Box<dyn std::error::Error>> {
-        let key = get_test_hmac().await;
-        HmacKey::update(&key.access_id, HmacState::Inactive).await?;
-        HmacKey::delete(&key.access_id).await?;
+        let client = Client::default();
+
+        let key = get_test_hmac(&client).await;
+        HmacKey::update(&key.access_id, HmacState::Inactive, &client).await?;
+        HmacKey::delete(&key.access_id, &client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn clear_keys() -> Result<(), Box<dyn std::error::Error>> {
-        let keys = HmacKey::list().await?;
+        let client = Client::default();
+
+        let keys = HmacKey::list(&client).await?;
         for key in &keys {
             if key.state != HmacState::Inactive {
-                HmacKey::update(&key.access_id, HmacState::Inactive).await?;
+                HmacKey::update(&key.access_id, HmacState::Inactive, &client).await?;
             }
-            HmacKey::delete(&key.access_id).await?;
+            HmacKey::delete(&key.access_id, &client).await?;
         }
         Ok(())
     }

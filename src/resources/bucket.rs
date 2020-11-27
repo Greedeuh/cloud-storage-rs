@@ -1,4 +1,3 @@
-use crate::error::{Error, GoogleResponse};
 use crate::resources::bucket_access_control::{BucketAccessControl, NewBucketAccessControl};
 pub use crate::resources::common::Entity;
 use crate::resources::common::ListResponse;
@@ -6,6 +5,10 @@ use crate::resources::default_object_access_control::{
     DefaultObjectAccessControl, NewDefaultObjectAccessControl,
 };
 pub use crate::resources::location::*;
+use crate::{
+    error::{Error, GoogleResponse},
+    Client,
+};
 
 /// The Buckets resource represents a
 /// [bucket](https://cloud.google.com/storage/docs/key-terms#buckets) in Google Cloud Storage. There
@@ -561,13 +564,14 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn create(new_bucket: &NewBucket) -> crate::Result<Self> {
+    pub async fn create(new_bucket: &NewBucket, client: &Client) -> crate::Result<Self> {
         let url = format!("{}/b/", crate::BASE_URL);
         let project = &crate::SERVICE_ACCOUNT.project_id;
         let query = [("project", project)];
-        let result: GoogleResponse<Self> = crate::CLIENT
+        let result: GoogleResponse<Self> = client
+            .http_client
             .post(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .query(&query)
             .json(new_bucket)
             .send()
@@ -605,13 +609,14 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn list() -> Result<Vec<Self>, Error> {
+    pub async fn list(client: &Client) -> Result<Vec<Self>, Error> {
         let url = format!("{}/b/", crate::BASE_URL);
         let project = &crate::SERVICE_ACCOUNT.project_id;
         let query = [("project", project)];
-        let result: GoogleResponse<ListResponse<Self>> = crate::CLIENT
+        let result: GoogleResponse<ListResponse<Self>> = client
+            .http_client
             .get(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .query(&query)
             .send()
             .await?
@@ -651,11 +656,12 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn read(name: &str) -> crate::Result<Self> {
+    pub async fn read(name: &str, client: &Client) -> crate::Result<Self> {
         let url = format!("{}/b/{}", crate::BASE_URL, name);
-        let result: GoogleResponse<Self> = crate::CLIENT
+        let result: GoogleResponse<Self> = client
+            .http_client
             .get(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .send()
             .await?
             .json()
@@ -701,11 +707,12 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn update(&self) -> crate::Result<Self> {
+    pub async fn update(&self, client: &Client) -> crate::Result<Self> {
         let url = format!("{}/b/{}", crate::BASE_URL, self.name);
-        let result: GoogleResponse<Self> = crate::CLIENT
+        let result: GoogleResponse<Self> = client
+            .http_client
             .put(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .json(self)
             .send()
             .await?
@@ -747,11 +754,12 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn delete(self) -> crate::Result<()> {
+    pub async fn delete(self, client: &Client) -> crate::Result<()> {
         let url = format!("{}/b/{}", crate::BASE_URL, self.name);
-        let response = crate::CLIENT
+        let response = client
+            .http_client
             .delete(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .send()
             .await?;
         if response.status().is_success() {
@@ -767,8 +775,8 @@ impl Bucket {
     /// This function requires that the feature flag `sync` is enabled in `Cargo.toml`.
     #[cfg(feature = "sync")]
     #[tokio::main]
-    pub async fn delete_sync(self) -> crate::Result<()> {
-        self.delete().await
+    pub async fn delete_sync(self, client: &Client) -> crate::Result<()> {
+        self.delete(client).await
     }
 
     /// Returns the [IAM Policy](https://cloud.google.com/iam/docs/) for this bucket.
@@ -790,11 +798,12 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_iam_policy(&self) -> crate::Result<IamPolicy> {
+    pub async fn get_iam_policy(&self, client: &Client) -> crate::Result<IamPolicy> {
         let url = format!("{}/b/{}/iam", crate::BASE_URL, self.name);
-        let result: GoogleResponse<IamPolicy> = crate::CLIENT
+        let result: GoogleResponse<IamPolicy> = client
+            .http_client
             .get(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .send()
             .await?
             .json()
@@ -846,11 +855,16 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn set_iam_policy(&self, iam: &IamPolicy) -> crate::Result<IamPolicy> {
+    pub async fn set_iam_policy(
+        &self,
+        iam: &IamPolicy,
+        client: &Client,
+    ) -> crate::Result<IamPolicy> {
         let url = format!("{}/b/{}/iam", crate::BASE_URL, self.name);
-        let result: GoogleResponse<IamPolicy> = crate::CLIENT
+        let result: GoogleResponse<IamPolicy> = client
+            .http_client
             .put(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .json(iam)
             .send()
             .await?
@@ -884,16 +898,21 @@ impl Bucket {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn test_iam_permission(&self, permission: &str) -> crate::Result<TestIamPermission> {
+    pub async fn test_iam_permission(
+        &self,
+        permission: &str,
+        client: &Client,
+    ) -> crate::Result<TestIamPermission> {
         if permission == "storage.buckets.list" || permission == "storage.buckets.create" {
             return Err(Error::new(
                 "tested permission must not be `storage.buckets.list` or `storage.buckets.create`",
             ));
         }
         let url = format!("{}/b/{}/iam/testPermissions", crate::BASE_URL, self.name);
-        let result: GoogleResponse<TestIamPermission> = crate::CLIENT
+        let result: GoogleResponse<TestIamPermission> = client
+            .http_client
             .get(&url)
-            .headers(crate::get_headers().await?)
+            .headers(crate::get_headers(client).await?)
             .query(&[("permissions", permission)])
             .send()
             .await?
@@ -930,6 +949,7 @@ mod tests {
 
     #[tokio::test]
     async fn create() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         dotenv::dotenv().ok();
         let base_name = std::env::var("TEST_BUCKET")?;
         // use a more complex bucket in this test.
@@ -952,60 +972,66 @@ mod tests {
             }),
             ..Default::default()
         };
-        let bucket = Bucket::create(&new_bucket).await?;
-        bucket.delete().await?;
+        let bucket = Bucket::create(&new_bucket, &client).await?;
+        bucket.delete(&client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn list() -> Result<(), Box<dyn std::error::Error>> {
-        Bucket::list().await?;
+        let client = Client::default();
+        Bucket::list(&client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn read() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         let bucket = crate::create_test_bucket("test-read").await;
-        let also_bucket = Bucket::read(&bucket.name).await?;
+        let also_bucket = Bucket::read(&bucket.name, &client).await?;
         assert_eq!(bucket, also_bucket);
-        bucket.delete().await?;
-        assert!(also_bucket.delete().await.is_err());
+        bucket.delete(&client).await?;
+        assert!(also_bucket.delete(&client).await.is_err());
         Ok(())
     }
 
     #[tokio::test]
     async fn update() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         let mut bucket = crate::create_test_bucket("test-update").await;
         bucket.retention_policy = Some(RetentionPolicy {
             retention_period: 50,
             effective_time: chrono::Utc::now() + chrono::Duration::seconds(50),
             is_locked: Some(false),
         });
-        bucket.update().await?;
-        let updated = Bucket::read(&bucket.name).await?;
+        bucket.update(&client).await?;
+        let updated = Bucket::read(&bucket.name, &client).await?;
         assert_eq!(updated.retention_policy.unwrap().retention_period, 50);
-        bucket.delete().await?;
+        bucket.delete(&client).await?;
         Ok(())
     }
 
     // used a lot throughout the other tests, but included for completeness
     #[tokio::test]
     async fn delete() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         let bucket = crate::create_test_bucket("test-delete").await;
-        bucket.delete().await?;
+        bucket.delete(&client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn get_iam_policy() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         let bucket = crate::create_test_bucket("test-get-iam-policy").await;
-        bucket.get_iam_policy().await?;
-        bucket.delete().await?;
+        bucket.get_iam_policy(&client).await?;
+        bucket.delete(&client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn set_iam_policy() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         let bucket = crate::create_test_bucket("test-set-iam-policy").await;
         let iam_policy = IamPolicy {
             bindings: vec![Binding {
@@ -1015,17 +1041,23 @@ mod tests {
             }],
             ..Default::default()
         };
-        bucket.set_iam_policy(&iam_policy).await?;
-        assert_eq!(bucket.get_iam_policy().await?.bindings, iam_policy.bindings);
-        bucket.delete().await?;
+        bucket.set_iam_policy(&iam_policy, &client).await?;
+        assert_eq!(
+            bucket.get_iam_policy(&client).await?.bindings,
+            iam_policy.bindings
+        );
+        bucket.delete(&client).await?;
         Ok(())
     }
 
     #[tokio::test]
     async fn test_iam_permission() -> Result<(), Box<dyn std::error::Error>> {
+        let client = Client::default();
         let bucket = crate::create_test_bucket("test-test-ia-permission").await;
-        bucket.test_iam_permission("storage.buckets.get").await?;
-        bucket.delete().await?;
+        bucket
+            .test_iam_permission("storage.buckets.get", &client)
+            .await?;
+        bucket.delete(&client).await?;
         Ok(())
     }
 
